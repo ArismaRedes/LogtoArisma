@@ -1,11 +1,13 @@
-# This compose file is for demonstration only, do not use in prod.
-version: "3.9"
+
 services:
   app:
     depends_on:
       postgres:
         condition: service_healthy
-    image: svhd/logto:${TAG-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: logto-local:dev
     entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
     ports:
       - 3001:3001

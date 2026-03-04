@@ -1,0 +1,21 @@
+services:
+  app:
+    image: arisma/logto_arisma:v1
+    expose:
+      - "3001"
+      - "3002"
+    environment:
+      - TRUST_PROXY_HEADER=1
+      - DB_URL=postgres://postgres:${POSTGRES_PASSWORD:-p0stgr3s}@postgres:5432/logto
+      # Set these explicitly in production to your public endpoints.
+      - ENDPOINT
+      - ADMIN_ENDPOINT
+    restart: unless-stopped
+    networks:
+      - arisma-network
+      - postgre-network
+networks:
+  arisma-network:
+    external: true
+  postgre-network:
+    external: true
