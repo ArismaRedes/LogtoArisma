@@ -1,15 +1,15 @@
 services:
-  app:
+  logto:
     image: arisma/logto_arisma:v1
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
     expose:
       - "3001"
       - "3002"
     environment:
       - TRUST_PROXY_HEADER=1
       - DB_URL=postgres://postgres:${POSTGRES_PASSWORD:-p0stgr3s}@postgres:5432/logto
-      # Set these explicitly in production to your public endpoints.
-      - ENDPOINT
-      - ADMIN_ENDPOINT
+      - ENDPOINT=https://logto.arisma.com.co
+      - ADMIN_ENDPOINT=https://logto-admin.arisma.com.co
     restart: unless-stopped
     networks:
       - arisma-network
