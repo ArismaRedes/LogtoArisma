@@ -11,8 +11,10 @@ import useErrorHandler from '@/hooks/use-error-handler';
 import useGlobalRedirectTo from '@/hooks/use-global-redirect-to';
 import useNavigateWithPreservedSearchParams from '@/hooks/use-navigate-with-preserved-search-params';
 import { useSieMethods } from '@/hooks/use-sie';
+import { searchKeys } from '@/shared/utils/search-parameters';
 import useTerms from '@/hooks/use-terms';
 import useToast from '@/hooks/use-toast';
+import { logtoCookies } from '@/utils/cookies';
 import { parseQueryParameters } from '@/utils';
 import { validateState } from '@/utils/social-connectors';
 
@@ -78,12 +80,36 @@ const useSingleSignOnListener = (connectorId: string) => {
   const [searchParameters, setSearchParameters] = useSearchParams();
   const { setToast } = useToast();
   const redirectTo = useGlobalRedirectTo();
-  const { signInMode } = useSieMethods();
+  const { signInMode, unknownSessionRedirectUrl } = useSieMethods();
   const { verificationIdsMap } = useContext(UserInteractionContext);
   const verificationId = verificationIdsMap[VerificationType.EnterpriseSso];
 
   const handleError = useErrorHandler();
   const navigate = useNavigateWithPreservedSearchParams();
+  const redirectToSignIn = useCallback(() => {
+    const appId = sessionStorage.getItem(searchKeys.appId) ?? logtoCookies.appId;
+
+    if (appId) {
+      sessionStorage.setItem(searchKeys.appId, appId);
+    }
+
+    if (unknownSessionRedirectUrl) {
+      const redirectUrl = new URL(unknownSessionRedirectUrl);
+
+      if (
+        appId &&
+        redirectUrl.pathname.endsWith('/' + experience.routes.signIn) &&
+        !redirectUrl.searchParams.has(searchKeys.appId)
+      ) {
+        redirectUrl.searchParams.set(searchKeys.appId, appId);
+      }
+
+      window.location.replace(redirectUrl);
+      return;
+    }
+
+    navigate('/' + experience.routes.signIn);
+  }, [navigate, unknownSessionRedirectUrl]);
 
   const singleSignOnAuthorizationRequest = useApi(signInWithSso);
   const registerSingleSignOnIdentity = useSingleSignOnRegister();
@@ -106,7 +132,7 @@ const useSingleSignOnListener = (connectorId: string) => {
             // Should not let user register new social account under sign-in only mode
             if (signInMode === SignInMode.SignIn) {
               setToast(error.message);
-              navigate('/' + experience.routes.signIn);
+              redirectToSignIn();
               return;
             }
 
@@ -115,7 +141,7 @@ const useSingleSignOnListener = (connectorId: string) => {
           // Redirect to sign-in page if error is not handled by the error handlers
           global: async (error) => {
             setToast(error.message);
-            navigate('/' + experience.routes.signIn);
+            redirectToSignIn();
           },
         });
         return;
@@ -127,8 +153,8 @@ const useSingleSignOnListener = (connectorId: string) => {
     },
     [
       handleError,
-      navigate,
       redirectTo,
+      redirectToSignIn,
       registerSingleSignOnIdentity,
       setToast,
       signInMode,
@@ -152,14 +178,14 @@ const useSingleSignOnListener = (connectorId: string) => {
     // Validate the state parameter
     if (!validateState(state, connectorId)) {
       setToast(t('error.invalid_connector_auth'));
-      navigate('/' + experience.routes.signIn);
+      redirectToSignIn();
       return;
     }
 
     // Validate the verificationId
     if (!verificationId) {
       setToast(t('error.invalid_session'));
-      navigate('/' + experience.routes.signIn);
+      redirectToSignIn();
       return;
     }
 
@@ -167,8 +193,8 @@ const useSingleSignOnListener = (connectorId: string) => {
   }, [
     connectorId,
     isConsumed,
-    navigate,
     searchParameters,
+    redirectToSignIn,
     setSearchParameters,
     setToast,
     singleSignOnHandler,

@@ -21,6 +21,50 @@ export const guardedPath = [
   '/forgot-password',
 ];
 
+export const resolveSessionRedirectUrl = async <
+  ContextT extends IRouterParamContext = IRouterParamContext,
+>(
+  ctx: ContextT,
+  queries: Queries,
+  fallbackPath: string
+) => {
+  // For unknown session, check if there is a redirect URL set in the SignInExperience
+  const { unknownSessionRedirectUrl } =
+    await queries.signInExperiences.findDefaultSignInExperience();
+
+  if (unknownSessionRedirectUrl) {
+    return unknownSessionRedirectUrl;
+  }
+
+  // If not, check if there is a redirect URL set in the tenant level LogtoConfigs
+  const {
+    rows: [data],
+  } = await queries.logtoConfigs.getRowsByKeys([
+    LogtoTenantConfigKey.SessionNotFoundRedirectUrl,
+  ]);
+  const parsed = trySafe(() => logtoConfigGuards.sessionNotFoundRedirectUrl.parse(data?.value));
+
+  if (parsed?.url) {
+    return parsed.url;
+  }
+
+  const [tenantId] = await getTenantId(ctx.URL);
+
+  if (!tenantId) {
+    throw new RequestError({ code: 'session.not_found', status: 404 });
+  }
+
+  const tenantEndpoint = getTenantEndpoint(tenantId, EnvSet.values);
+
+  if (EnvSet.values.isDomainBasedMultiTenancy) {
+    // Replace to current hostname (if custom domain is used)
+    // eslint-disable-next-line @silverhand/fp/no-mutation
+    tenantEndpoint.hostname = ctx.request.hostname;
+  }
+
+  return appendPath(tenantEndpoint, fallbackPath).href;
+};
+
 export default function koaSpaSessionGuard<
   StateT,
   ContextT extends IRouterParamContext,
@@ -37,48 +81,7 @@ export default function koaSpaSessionGuard<
       try {
         await provider.interactionDetails(ctx.req, ctx.res);
       } catch {
-        // For unknown session, check if there is a redirect URL set in the SignInExperience
-        const { unknownSessionRedirectUrl } =
-          await queries.signInExperiences.findDefaultSignInExperience();
-
-        if (unknownSessionRedirectUrl) {
-          ctx.redirect(unknownSessionRedirectUrl);
-
-          return;
-        }
-
-        // If not, check if there is a redirect URL set in the tenant level LogtoConfigs
-        const {
-          rows: [data],
-        } = await queries.logtoConfigs.getRowsByKeys([
-          LogtoTenantConfigKey.SessionNotFoundRedirectUrl,
-        ]);
-        const parsed = trySafe(() =>
-          logtoConfigGuards.sessionNotFoundRedirectUrl.parse(data?.value)
-        );
-
-        if (parsed?.url) {
-          ctx.redirect(parsed.url);
-
-          return;
-        }
-
-        // Redirect to the tenant's own session not found page
-        const [tenantId] = await getTenantId(ctx.URL);
-
-        if (!tenantId) {
-          throw new RequestError({ code: 'session.not_found', status: 404 });
-        }
-
-        const tenantEndpoint = getTenantEndpoint(tenantId, EnvSet.values);
-
-        if (EnvSet.values.isDomainBasedMultiTenancy) {
-          // Replace to current hostname (if custom domain is used)
-          // eslint-disable-next-line @silverhand/fp/no-mutation
-          tenantEndpoint.hostname = ctx.request.hostname;
-        }
-
-        ctx.redirect(appendPath(tenantEndpoint, sessionNotFoundPath).href);
+        ctx.redirect(await resolveSessionRedirectUrl(ctx, queries, sessionNotFoundPath));
 
         return;
       }

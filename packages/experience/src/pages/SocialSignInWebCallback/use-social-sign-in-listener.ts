@@ -24,7 +24,9 @@ import { useSieMethods } from '@/hooks/use-sie';
 import useSocialRegister from '@/hooks/use-social-register';
 import useSubmitInteractionErrorHandler from '@/hooks/use-submit-interaction-error-handler';
 import useToast from '@/hooks/use-toast';
+import { searchKeys } from '@/shared/utils/search-parameters';
 import { socialAccountNotExistErrorDataGuard } from '@/types/guard';
+import { logtoCookies } from '@/utils/cookies';
 import { parseQueryParameters } from '@/utils';
 import { getAuthValidationResult, getSessionValidationResult } from '@/utils/social-connectors';
 
@@ -33,7 +35,7 @@ import { normalizeExternalWebsiteGoogleOneTapConnectorData } from './utils';
 const useSocialSignInListener = (connectorId: string) => {
   const [loading, setLoading] = useState(true);
   const { setToast } = useToast();
-  const { signInMode, socialSignInSettings } = useSieMethods();
+  const { signInMode, socialSignInSettings, unknownSessionRedirectUrl } = useSieMethods();
   const { t } = useTranslation();
   const [isConsumed, setIsConsumed] = useState(false);
   const [searchParameters, setSearchParameters] = useSearchParams();
@@ -51,6 +53,30 @@ const useSocialSignInListener = (connectorId: string) => {
   const verifySocial = useApi(verifySocialVerification);
   const asyncSignInWithSocial = useApi(identifyAndSubmitInteraction);
   const asyncInitInteraction = useApi(initInteraction);
+  const redirectToSignIn = useCallback(() => {
+    const appId = sessionStorage.getItem(searchKeys.appId) ?? logtoCookies.appId;
+
+    if (appId) {
+      sessionStorage.setItem(searchKeys.appId, appId);
+    }
+
+    if (unknownSessionRedirectUrl) {
+      const redirectUrl = new URL(unknownSessionRedirectUrl);
+
+      if (
+        appId &&
+        redirectUrl.pathname.endsWith('/' + experience.routes.signIn) &&
+        !redirectUrl.searchParams.has(searchKeys.appId)
+      ) {
+        redirectUrl.searchParams.set(searchKeys.appId, appId);
+      }
+
+      window.location.replace(redirectUrl);
+      return;
+    }
+
+    navigate('/' + experience.routes.signIn);
+  }, [navigate, unknownSessionRedirectUrl]);
 
   const accountNotExistErrorHandler = useCallback(
     async (error: RequestErrorBody) => {
@@ -61,7 +87,7 @@ const useSocialSignInListener = (connectorId: string) => {
       // Redirect to sign-in page if the verificationId is not set properly
       if (!verificationId) {
         setToast(t('error.invalid_session'));
-        navigate('/' + experience.routes.signIn);
+        redirectToSignIn();
         return;
       }
 
@@ -81,7 +107,7 @@ const useSocialSignInListener = (connectorId: string) => {
       // Should not let user register new social account under sign-in only mode
       if (signInMode === SignInMode.SignIn) {
         setToast(error.message);
-        navigate('/' + experience.routes.signIn);
+        redirectToSignIn();
         return;
       }
 
@@ -93,6 +119,7 @@ const useSocialSignInListener = (connectorId: string) => {
       connectorId,
       navigate,
       registerWithSocial,
+      redirectToSignIn,
       setToast,
       signInMode,
       socialSignInSettings.automaticAccountLinking,
@@ -103,9 +130,9 @@ const useSocialSignInListener = (connectorId: string) => {
   const globalErrorHandler = useCallback(
     async (error: RequestErrorBody) => {
       setToast(error.message);
-      navigate('/' + experience.routes.signIn);
+      redirectToSignIn();
     },
-    [navigate, setToast]
+    [redirectToSignIn, setToast]
   );
 
   const preSignInErrorHandler = useSubmitInteractionErrorHandler(InteractionEvent.SignIn, {
@@ -212,7 +239,7 @@ const useSocialSignInListener = (connectorId: string) => {
 
     if (!isValidAuth) {
       setToast(t('error.invalid_connector_auth'));
-      navigate('/' + experience.routes.signIn);
+      redirectToSignIn();
       return;
     }
 
@@ -225,7 +252,7 @@ const useSocialSignInListener = (connectorId: string) => {
 
     if (!isValidSession) {
       setToast(t('error.invalid_session'));
-      navigate('/' + experience.routes.signIn);
+      redirectToSignIn();
       return;
     }
 
@@ -233,8 +260,8 @@ const useSocialSignInListener = (connectorId: string) => {
   }, [
     connectorId,
     isConsumed,
-    navigate,
     searchParameters,
+    redirectToSignIn,
     setSearchParameters,
     setToast,
     signInWithSocialHandler,

@@ -139,7 +139,7 @@ export default class Tenant implements TenantContext {
     };
 
     // Sign-in experience callback via form submission
-    mountCallbackRouter(app);
+    mountCallbackRouter(app, provider, queries);
 
     // Mount global well-known APIs
     app.use(mount('/.well-known', initPublicWellKnownApis(tenantContext)));
